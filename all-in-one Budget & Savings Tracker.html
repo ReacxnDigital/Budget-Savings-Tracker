@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Budget & Savings Tracker</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; background:#f4f6f9; color:#333; }
+    header { background:#4CAF50; padding:15px; text-align:center; color:white; font-size:24px; }
+    .container { max-width:1100px; margin:20px auto; padding:20px; background:white; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); }
+    h2 { border-bottom:2px solid #eee; padding-bottom:10px; }
+    .flex { display:flex; gap:20px; flex-wrap:wrap; }
+    .card { flex:1; min-width:200px; background:#f9f9f9; padding:15px; border-radius:8px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); transition:0.3s; }
+    .card:hover { transform:scale(1.02); }
+    .income { color:green; } .expense { color:red; } .net { color:blue; }
+    label { display:block; margin-top:10px; }
+    input, select, button { padding:8px; margin-top:5px; width:100%; border-radius:5px; border:1px solid #ccc; }
+    button { background:#4CAF50; color:white; border:none; cursor:pointer; transition:0.3s; }
+    button:hover { background:#45a049; }
+    table { width:100%; border-collapse:collapse; margin-top:20px; }
+    th, td { border:1px solid #ddd; padding:8px; text-align:center; }
+    th { background:#4CAF50; color:white; }
+    canvas { max-width:100%; margin:20px auto; display:block; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; }
+    footer { text-align:center; padding:15px; margin-top:20px; background:#f4f6f9; font-size:14px; color:#666; }
+  </style>
+</head>
+<body>
+  <header>💰 Budget & Savings Tracker</header>
+  <div class="container">
+    <h2>Add Transaction</h2>
+    <label>Type:
+      <select id="type">
+        <option value="income">Income</option>
+        <option value="expense">Expense</option>
+      </select>
+    </label>
+    <label>Category:
+      <select id="category">
+        <option>Food</option>
+        <option>Shopping</option>
+        <option>Rent</option>
+        <option>Travel</option>
+        <option>Salary</option>
+        <option>Loan</option>
+        <option>Subcription</option>
+        <option>Other</option>
+      </select>
+    </label>
+    <label>Description:<input type="text" id="desc"></label>
+    <label>Amount:<input type="number" id="amount"></label>
+    <label>Date:<input type="date" id="date"></label>
+    <button onclick="addTransaction()">Add Transaction</button>
+
+    <h2>Summary</h2>
+    <div class="flex">
+      <div class="card income">Income: <span id="totalIncome">0</span></div>
+      <div class="card expense">Expenses: <span id="totalExpense">0</span></div>
+      <div class="card net">Net: <span id="net">0</span></div>
+      <div class="card">Savings Goal: <span id="savingsProgress">0%</span>
+        <progress id="savingsBar" value="0" max="100" style="width:100%"></progress>
+      </div>
+    </div>
+
+    <h2>Settings</h2>
+    <label>Currency:
+      <select id="currency" onchange="updateCurrency()">
+        <option value="₹">INR (₹)</option>
+        <option value="$">USD ($)</option>
+        <option value="€">EUR (€)</option>
+      </select>
+    </label>
+    <label>Savings Goal:<input type="number" id="savingsGoal" placeholder="Enter amount"></label>
+    <label>Deadline:<input type="date" id="savingsDeadline"></label>
+    <button onclick="saveSettings()">Save Goal</button>
+
+    <h2>Transactions</h2>
+    <label>Filter by Month:
+      <input type="month" id="monthFilter" onchange="render()">
+    </label>
+    <table id="transactionTable">
+      <thead>
+        <tr><th>Type</th><th>Category</th><th>Description</th><th>Amount</th><th>Date</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h2>Charts</h2>
+    <canvas id="donutChart" width="400" height="200"></canvas>
+    <canvas id="barChart" width="400" height="200"></canvas>
+
+    <div class="actions">
+      <button onclick="exportCSV()">📥 Export CSV</button>
+      <button onclick="printSummary()">🖨️ Print</button>
+      <button style="background:#d9534f" onclick="resetData()">♻️ Reset</button>
+    </div>
+  </div>
+
+  <footer>Developed By Reacxn Digital</footer>
+
+  <script>
+    let transactions = JSON.parse(localStorage.getItem("rx_budget_data")) || [];
+    let currencySymbol = localStorage.getItem("rx_currency") || "₹";
+    document.getElementById("currency").value = currencySymbol;
+
+    function saveData() {
+      localStorage.setItem("rx_budget_data", JSON.stringify(transactions));
+      localStorage.setItem("rx_currency", currencySymbol);
+    }
+
+    function addTransaction() {
+      const type = document.getElementById("type").value;
+      const category = document.getElementById("category").value;
+      const desc = document.getElementById("desc").value;
+      const amount = parseFloat(document.getElementById("amount").value);
+      const date = document.getElementById("date").value;
+      if (!amount || !date) return alert("Please fill all fields.");
+      transactions.push({ type, category, desc, amount, date });
+      saveData(); render();
+      document.getElementById("desc").value="";
+      document.getElementById("amount").value="";
+      document.getElementById("date").value="";
+    }
+
+    function render() {
+      let income=0, expense=0;
+      const tbody=document.querySelector("#transactionTable tbody");
+      tbody.innerHTML="";
+      const filter=document.getElementById("monthFilter").value;
+
+      let categoryTotals = {};
+
+      transactions.forEach((t,i)=>{
+        if(filter && !t.date.startsWith(filter)) return;
+        if(t.type==="income") income+=t.amount; else expense+=t.amount;
+
+        if(t.type==="expense"){
+          categoryTotals[t.category]=(categoryTotals[t.category]||0)+t.amount;
+        }
+
+        const row=document.createElement("tr");
+        row.innerHTML=`<td>${t.type}</td><td>${t.category}</td><td>${t.desc}</td><td>${currencySymbol}${t.amount}</td><td>${t.date}</td>
+        <td><button onclick="editTransaction(${i})">Edit</button><button onclick="deleteTransaction(${i})">Delete</button></td>`;
+        tbody.appendChild(row);
+      });
+
+      document.getElementById("totalIncome").innerText=currencySymbol+income;
+      document.getElementById("totalExpense").innerText=currencySymbol+expense;
+      document.getElementById("net").innerText=currencySymbol+(income-expense);
+
+      const goal=parseFloat(localStorage.getItem("rx_goal"))||0;
+      const progress=goal? Math.min(100,((income-expense)/goal*100)) : 0;
+      document.getElementById("savingsProgress").innerText=Math.round(progress)+"%";
+      document.getElementById("savingsBar").value=progress;
+
+      drawDonut(categoryTotals);
+      drawBar(income,expense);
+    }
+
+    function editTransaction(i) {
+      const t=transactions[i];
+      document.getElementById("type").value=t.type;
+      document.getElementById("category").value=t.category;
+      document.getElementById("desc").value=t.desc;
+      document.getElementById("amount").value=t.amount;
+      document.getElementById("date").value=t.date;
+      deleteTransaction(i);
+    }
+
+    function deleteTransaction(i) {
+      transactions.splice(i,1);
+      saveData(); render();
+    }
+
+    function updateCurrency() {
+      currencySymbol=document.getElementById("currency").value;
+      saveData(); render();
+    }
+
+    function saveSettings() {
+      const goal=document.getElementById("savingsGoal").value;
+      localStorage.setItem("rx_goal",goal);
+      render();
+    }
+
+    function exportCSV() {
+      let csv="Type,Category,Description,Amount,Date\n";
+      transactions.forEach(t=>{
+        csv+=`${t.type},${t.category},${t.desc},${t.amount},${t.date}\n`;
+      });
+      const blob=new Blob([csv],{type:"text/csv"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download="budget_data.csv";a.click();URL.revokeObjectURL(url);
+    }
+
+    function printSummary() { window.print(); }
+
+    function resetData() {
+      if(confirm("Do you want to save CSV before reset?")) { exportCSV(); }
+      if(confirm("Are you sure to reset all data?")) {
+        transactions=[]; localStorage.clear(); render();
+      }
+    }
+
+    // Draw Donut Chart (Expenses by Category)
+    function drawDonut(data){
+      const canvas=document.getElementById("donutChart");
+      const ctx=canvas.getContext("2d");
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const total=Object.values(data).reduce((a,b)=>a+b,0);
+      let start=0;
+      const colors=["#FF6384","#36A2EB","#FFCE56","#4BC0C0","#9966FF","#FF9F40"];
+      let i=0;
+      for(const cat in data){
+        const slice=(data[cat]/total)*2*Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(200,100);
+        ctx.arc(200,100,80,start,start+slice);
+        ctx.closePath();
+        ctx.fillStyle=colors[i%colors.length];
+        ctx.fill();
+        start+=slice;
+        i++;
+      }
+      ctx.fillStyle="#333"; ctx.font="14px Arial";
+      ctx.fillText("Expenses by Category",120,190);
+    }
+
+    // Draw Bar Chart (Income vs Expense)
+    function drawBar(income,expense){
+      const canvas=document.getElementById("barChart");
+      const ctx=canvas.getContext("2d");
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const max=Math.max(income,expense,1);
+      const barWidth=80;
+      const gap=60;
+      ctx.fillStyle="#36A2EB";
+      ctx.fillRect(100,200-(income/max*150),barWidth,income/max*150);
+      ctx.fillText("Income",100,220);
+      ctx.fillText(currencySymbol+income,100,200-(income/max*150)-10);
+      ctx.fillStyle="#FF6384";
+      ctx.fillRect(100+barWidth+gap,200-(expense/max*150),barWidth,expense/max*150);
+      ctx.fillText("Expense",100+barWidth+gap,220);
+      ctx.fillText(currencySymbol+expense,100+barWidth+gap,200-(expense/max*150)-10);
+    }
+
+    render();
+  </script>
+</body>
+</html>
